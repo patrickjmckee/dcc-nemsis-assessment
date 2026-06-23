@@ -9,7 +9,7 @@ db:
   password: ""         # used only when auth = sql
 
 paths:
-  source_dir: ./_Claude/INPUTS
+  source_dir: ./data
   source_pattern: "ems_runs_{year}.csv"
   years: [2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025]
 
