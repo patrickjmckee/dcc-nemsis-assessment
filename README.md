@@ -1,7 +1,7 @@
 # NEMSIS Indiana EMS — ETL and Dimensional Warehouse
 
 End-to-end ETL that ingests NEMSIS-compliant Indiana EMS run data (CSV, 2014–2025, ~10.5M rows
-across 13 files), stages it raw, validates and quarantines bad rows, and loads it into a Kimball
+across 12 annual files), stages it raw, validates and quarantines bad rows, and loads it into a Kimball
 dimensional warehouse on SQL Server.
 
 - **Source:** Indiana EMS runs (`hub.mph.in.gov`), NEMSIS v3.5 element families.
@@ -13,17 +13,16 @@ dimensional warehouse on SQL Server.
 ## Architecture
 
 ```
-CSV (per year)
-   │  extract.py        read in chunks, trim headers, enforce 22-col schema
+ems_runs_<year>.csv
+   │  extract.py     chunked read, header trim, 22-col schema check
    ▼
-stg.stg_ems_raw         raw landing, VARCHAR(MAX), partitioned by source_year
-   │  transform.py      validate, normalize, repair, hash; split clean vs reject
+DataFrame chunk ──► stage.py ──► stg.stg_ems_raw   (raw VARCHAR(MAX), partitioned by source_year)
+   │  transform.py  validate, normalize county, repair timestamps/flags, compute row_hash
    ├──────────────► stg.stg_ems_quarantine   (rejected rows + reason code)
-   ▼
+   ▼  (clean rows)
    load.py
-   ├─ dimensions first   dw.dim_* (Type 1 overwrite, Type 2 versioned)
-   ▼
-dw.fact_ems_run         surrogate FKs + measures + timestamps + audit
+   ├─ 1. dimensions ──► dw.dim_*          (Type 1 overwrite, Type 2 versioned)
+   └─ 2. fact       ──► dw.fact_ems_run   (surrogate FKs + measures + timestamps + audit)
 ```
 
 `pipeline.py` is the sole entry point. It assigns one `load_id` per run and streams each source
@@ -91,8 +90,9 @@ erDiagram
 
 ```bash
 python -m venv .venv
-.venv/Scripts/activate          # Windows;  source .venv/bin/activate on POSIX
-pip install -r requirements.txt # pandas, pyyaml, pyodbc
+# Windows (PowerShell):  .venv\Scripts\Activate.ps1
+# POSIX:                 source .venv/bin/activate
+pip install -r requirements.txt   # pandas, pyyaml, pyodbc
 ```
 
 ### 2. Provision the warehouse
@@ -111,8 +111,8 @@ sqlcmd -S <server> -d <database> -i sql/04_stg_ems_quarantine.sql
 
 Edit [`config/params.yaml`](config/params.yaml): database `server`/`database`/`driver`/`auth`,
 `paths.source_dir` (where the `ems_runs_<year>.csv` files live), `batch_size`, `read_chunk_size`,
-and `load_mode`. No paths, connection strings, batch sizes, or environment names are hardcoded in
-the source.
+`load_mode`, and `env` (dev/test/prod). No paths, connection strings, batch sizes, or environment
+names are hardcoded in the source.
 
 ### 4. Run the pipeline
 
@@ -131,8 +131,9 @@ The run logs to the console and to `logs/etl_load_<load_id>.log`.
 The source carries no incident, patient, unit, or record identifier, so there is no key to support
 a finer grain (per-patient or per-disposition) or to roll rows up to an incident. Each row already
 describes one unit encounter, which is the transaction grain. Because there is no natural key, row
-identity is a hash of all 22 source columns plus `source_year`. Full rationale and the SCD decisions
-are in [`docs/schema-diagram.md`](docs/schema-diagram.md) and the dimension table below.
+identity is the MD5 hash of all 22 source columns, scoped per file by `source_year`
+(`UNIQUE(row_hash, source_year)`). SCD types and rationale are summarized in the dimension table and
+notes below.
 
 ### Dimensions
 
@@ -164,7 +165,7 @@ A row is **rejected to `stg.stg_ems_quarantine`** (first failing check wins) whe
 | Reason code | Condition |
 |-------------|-----------|
 | `INCIDENT_DT_INVALID` | `INCIDENT_DT` null or unparseable |
-| `INCIDENT_DT_OUT_OF_RANGE` | outside `[2013-01-01, load_year+1)` |
+| `INCIDENT_DT_OUT_OF_RANGE` | before 2013-01-01, or dated in a year later than the load year |
 | `INCIDENT_COUNTY_INVALID` | not in the canonical 92-county list after normalization |
 | `DURATION_MINS_OUT_OF_RANGE` | a duration is non-numeric, negative, or > 1440 |
 | `FLAG_INVALID` | `NALOXONE_GIVEN_FLG` or `MEDICATION_GIVEN_OTHER_FLG` not in {0,1} |
@@ -224,7 +225,7 @@ the run continues to the next year.
   reconciled against timestamps, because profiling showed the stored values do not match any
   timestamp-derived formula.
 - **Type 2 `valid_from`** uses the source row's `INCIDENT_DT`; for a tuple seen across many rows it is
-  the earliest date within the loaded batch.
+  the earliest date within the chunk that first introduces it.
 - **Database not executed in this environment:** no SQL Server instance was available, so the DDL and
   the load-side logic are verified by spec conformance and DB-free tests, not a live load. End-to-end
   execution against a provisioned SQL Server is the one remaining validation step.

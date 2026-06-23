@@ -1,0 +1,111 @@
+%% NEMSIS Indiana EMS -- Kimball warehouse ERD (reflects final DDL in _Claude/OUTPUTS/sql/)
+%% Generated 2026-06-22 (Session 2). Source: 01_stg_ems_raw, 02_dw_dimensions, 03_dw_fact, 04_stg_ems_quarantine.
+%% Notation: PK = surrogate primary key, FK = foreign key, UK = unique/natural key.
+%% Staging tables (stg_ems_raw, stg_ems_quarantine) have no DB-level relationship to dw; shown for completeness.
+
+erDiagram
+
+    dim_date ||--o{ fact_ems_run : "incident_date_key"
+    dim_county ||--o{ fact_ems_run : "county_key"
+    dim_complaint ||--o{ fact_ems_run : "complaint_key"
+    dim_run_flags ||--o{ fact_ems_run : "flags_key"
+    dim_provider_type ||--o{ fact_ems_run : "provider_type_key"
+    dim_destination_type ||--o{ fact_ems_run : "destination_type_key (nullable)"
+    dim_disposition ||--o{ fact_ems_run : "disposition_key (nullable)"
+
+    dim_date {
+        int incident_date_key PK
+        date incident_date UK
+        smallint year
+        tinyint month
+        tinyint quarter
+        tinyint day_of_week
+    }
+
+    dim_county {
+        int county_key PK
+        varchar county_name UK "normalized: upper, trim, no periods"
+    }
+
+    dim_complaint {
+        int complaint_key PK
+        varchar chief_complaint_dispatch "nullable"
+        varchar anatomic_location "nullable"
+        varchar primary_symptom "nullable"
+    }
+
+    dim_run_flags {
+        int flags_key PK
+        varchar injury_flag
+        varchar naloxone_flag
+        varchar medication_flag
+    }
+
+    dim_provider_type {
+        int provider_type_key PK
+        varchar structure UK "Type 2"
+        varchar service UK "Type 2"
+        varchar level UK "Type 2"
+        varchar row_hash
+        date valid_from
+        date valid_to "nullable"
+        bit is_current
+    }
+
+    dim_destination_type {
+        int destination_type_key PK
+        varchar destination_code UK "Type 2"
+        varchar row_hash
+        date valid_from
+        date valid_to "nullable"
+        bit is_current
+    }
+
+    dim_disposition {
+        int disposition_key PK
+        varchar disposition_ed UK "Type 2"
+        varchar disposition_hospital UK "Type 2"
+        varchar row_hash
+        date valid_from
+        date valid_to "nullable"
+        bit is_current
+    }
+
+    fact_ems_run {
+        bigint run_key PK
+        int incident_date_key FK
+        int county_key FK
+        int complaint_key FK
+        int flags_key FK
+        int provider_type_key FK
+        int destination_type_key FK "nullable"
+        int disposition_key FK "nullable"
+        int provider_to_scene_mins "nullable [0,1440]"
+        int provider_to_destination_mins "nullable [0,1440]"
+        int run_count "default 1"
+        datetime2 unit_notified_dt "nullable"
+        datetime2 unit_arrived_scene_dt "nullable"
+        datetime2 unit_arrived_patient_dt "nullable"
+        datetime2 unit_left_scene_dt "nullable"
+        datetime2 patient_arrived_destination_dt "nullable"
+        varchar provider_impression_primary "degenerate, nullable"
+        varchar row_hash UK "UNIQUE(row_hash, source_year)"
+        int load_id
+        int source_year UK
+        bit quarantine_flag "default 0"
+    }
+
+    stg_ems_raw {
+        varchar all_22_csv_columns "VARCHAR(MAX), raw landing"
+        int source_year "partition key"
+        int load_id
+    }
+
+    stg_ems_quarantine {
+        varchar all_22_csv_columns "VARCHAR(MAX), raw"
+        varchar row_hash PK
+        varchar quarantine_reason
+        int load_id PK
+        datetime2 quarantine_timestamp
+        int source_year PK
+    }
