@@ -10,7 +10,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from utils import SOURCE_COLUMNS, normalize_county, row_hash
+from utils import SOURCE_COLUMNS, normalize_county, row_hashes
 
 # Reject window for INCIDENT_DT lower bound (dq-rules rule 1).
 _MIN_INCIDENT_DATE = pd.Timestamp("2013-01-01")
@@ -101,8 +101,11 @@ def _build_fact(clean, parsed_clean, hashes_clean, load_id):
     incident_ts = parsed_clean.dt.normalize()
     injury, injury_repairs = _map_injury(clean["INJURY_FLG"])
     timestamps, ts_repairs = _window_timestamps(clean, incident_ts)
-    scene = pd.to_numeric(clean["PROVIDER_TO_SCENE_MINS"], errors="coerce")
-    dest = pd.to_numeric(clean["PROVIDER_TO_DESTINATION_MINS"], errors="coerce")
+    # Round to whole minutes: durations are validated as numeric in [0, 1440]
+    # but not as integers; the fact column is INT, so a fractional value would
+    # otherwise fail the Int64 cast at load time.
+    scene = pd.to_numeric(clean["PROVIDER_TO_SCENE_MINS"], errors="coerce").round()
+    dest = pd.to_numeric(clean["PROVIDER_TO_DESTINATION_MINS"], errors="coerce").round()
     fact = pd.DataFrame(index=clean.index)
     fact["incident_date"] = incident_ts
     fact["county_name"] = clean["INCIDENT_COUNTY"].map(normalize_county)
@@ -154,13 +157,14 @@ def transform(df, load_id, county_set, run_year):
     max_date = pd.Timestamp(date(run_year + 1, 1, 1))
     parsed_dt = pd.to_datetime(df["INCIDENT_DT"], format="ISO8601", errors="coerce")
     county_norm = df["INCIDENT_COUNTY"].map(normalize_county)
-    hashes = df[SOURCE_COLUMNS].fillna("").apply(lambda r: row_hash(r.tolist()), axis=1)
+    hashes = row_hashes(df[SOURCE_COLUMNS])
     reason = _reason(df, parsed_dt, county_norm, county_set, max_date)
     qdf = _build_quarantine(df, reason, hashes, load_id)
     clean_mask = reason.isna()
     clean = df.loc[clean_mask]
     fact, stats = _build_fact(clean, parsed_dt[clean_mask], hashes[clean_mask], load_id)
-    if not (2014 <= df["source_year"].iloc[0] <= 2021):
+    year = int(df["source_year"].iloc[0]) if len(df) else None
+    if year is None or not (2014 <= year <= 2021):
         stats["ordering_violations"] = None
     stats["rejected"] = int(reason.notna().sum())
     stats["reject_by_reason"] = reason.value_counts().to_dict()

@@ -59,23 +59,30 @@ def get_logger(log_dir, level, load_id):
 
 
 def get_connection(db):
-    """Open a pyodbc connection to SQL Server from the db config block."""
+    """Open a pyodbc connection to SQL Server from the db config block.
+    auth: 'trusted' (Windows/integrated, default) or 'sql' (username/password)."""
     import pyodbc
 
     conn_str = (
         f"DRIVER={{{db['driver']}}};SERVER={db['server']};"
-        f"DATABASE={db['database']};Trusted_Connection=yes;TrustServerCertificate=yes"
+        f"DATABASE={db['database']};TrustServerCertificate=yes"
     )
+    if str(db.get("auth", "trusted")).lower() == "sql":
+        conn_str += f";UID={db['username']};PWD={db['password']}"
+    else:
+        conn_str += ";Trusted_Connection=yes"
     return pyodbc.connect(conn_str, autocommit=False)
 
 
-def insert_batches(conn, sql, rows, batch_size):
-    """Batch INSERT via fast_executemany. No row-by-row execution. Commits once
-    at the end. Returns the number of rows submitted."""
+def insert_batches(conn, sql, rows, batch_size, fast=True):
+    """Batch INSERT (no row-by-row execution); commits once at the end and
+    returns the row count. fast=False disables fast_executemany for inserts
+    that touch VARCHAR(MAX) columns (pyodbc over-binds MAX types on the fast
+    path), e.g. the all-MAX staging and quarantine tables."""
     if not rows:
         return 0
     cur = conn.cursor()
-    cur.fast_executemany = True
+    cur.fast_executemany = fast
     for start in range(0, len(rows), batch_size):
         cur.executemany(sql, rows[start:start + batch_size])
     conn.commit()
@@ -87,6 +94,18 @@ def row_hash(values):
     """MD5 hex (32-char lowercase) of values joined by '|', NULL coerced to ''."""
     parts = ["" if v is None else str(v) for v in values]
     return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def row_hashes(frame):
+    """Vectorized row_hash over a string-column DataFrame (column order defines
+    the hash). NULL coerced to ''. Returns a Series of 32-char lowercase MD5 hex.
+    The '|' delimiter is fixed by the SESSION 3 spec; values are not escaped, so
+    a field literally containing '|' carries a small, spec-accepted collision risk."""
+    cols = list(frame.columns)
+    joined = frame[cols[0]].fillna("")
+    for col in cols[1:]:
+        joined = joined + "|" + frame[col].fillna("")
+    return joined.map(lambda s: hashlib.md5(s.encode("utf-8")).hexdigest())
 
 
 def normalize_county(value):

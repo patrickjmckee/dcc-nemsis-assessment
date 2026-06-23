@@ -126,7 +126,13 @@ def _date_members(fact):
 
 def _type2_members(fact, cols, mask=None):
     """Distinct natural-key tuples with valid_from = MIN(incident_date) and
-    row_hash over the tuple. NULLs coerced to '' (sentinel-friendly)."""
+    row_hash over the tuple. NULLs coerced to '' (sentinel-friendly).
+
+    valid_from is the min incident_date within the batch being loaded. Because
+    _load_type2 only inserts a tuple when no current row exists, the persisted
+    valid_from reflects the first batch/chunk/year that introduced the tuple,
+    not necessarily the global earliest date (relevant only for out-of-order
+    incremental loads; this source has no real SCD versioning)."""
     sub = fact if mask is None else fact[mask]
     m = sub[cols].fillna("").copy()
     m["incident_date"] = pd.to_datetime(sub["incident_date"]).dt.date
@@ -137,10 +143,16 @@ def _type2_members(fact, cols, mask=None):
 
 
 def _lookup(df, cols, mapping, fill=None, null_mask=None):
-    """Resolve surrogate keys for each row; null_mask forces NULL FK."""
-    sub = df[cols].fillna(fill) if fill is not None else df[cols]
-    keys = [mapping.get(tuple(r)) for r in sub.to_numpy()]
-    s = pd.Series(keys, index=df.index, dtype="object")
+    """Resolve surrogate keys for each row via a vectorized left merge (no
+    row-by-row lookup); null_mask forces NULL FK. Unmatched keys stay NaN."""
+    left = df[cols].fillna(fill) if fill is not None else df[cols]
+    cols = list(cols)
+    if mapping:
+        md = pd.DataFrame([(*k, v) for k, v in mapping.items()], columns=cols + ["__k"])
+        merged = left.merge(md, on=cols, how="left", sort=False)
+        s = pd.Series(merged["__k"].to_numpy(), index=df.index, dtype="object")
+    else:
+        s = pd.Series([None] * len(df), index=df.index, dtype="object")
     if null_mask is not None:
         s[null_mask.values] = None
     return s
@@ -148,6 +160,8 @@ def _lookup(df, cols, mapping, fill=None, null_mask=None):
 
 def load_dimensions(conn, fact, batch_size):
     """Load all dimensions and return fact augmented with surrogate FK columns."""
+    if fact.empty:
+        return fact
     ts = pd.to_datetime(fact["incident_date"])
     date_map = _load_type1(
         conn, _date_members(fact), "dw.dim_date", "incident_date_key",
@@ -177,8 +191,8 @@ def load_dimensions(conn, fact, batch_size):
     disp_map = _load_type2(conn, _type2_members(fact, disp_cols, disp_mask),
                            "dw.dim_disposition", "disposition_key", disp_cols, batch_size)
     out = fact.copy()
-    date_d = ts.dt.date
-    out["incident_date_key"] = [date_map[(x,)] for x in date_d]
+    out["incident_date_key"] = _lookup(out.assign(_inc_date=ts.dt.date),
+                                       ["_inc_date"], date_map)
     out["county_key"] = _lookup(out, ["county_name"], county_map)
     out["flags_key"] = _lookup(out, flags_cols, flags_map)
     out["complaint_key"] = _lookup(out, comp_cols, comp_map, fill="")
@@ -187,6 +201,12 @@ def load_dimensions(conn, fact, batch_size):
                                           fill="", null_mask=~dest_mask)
     out["disposition_key"] = _lookup(out, disp_cols, disp_map,
                                      fill="", null_mask=~disp_mask)
+    required = ["incident_date_key", "county_key", "complaint_key",
+                "flags_key", "provider_type_key"]
+    missing = [c for c in required if out[c].isna().any()]
+    if missing:
+        raise ValueError(f"unresolved NOT NULL dimension keys {missing} "
+                         f"(year {int(out['source_year'].iloc[0])})")
     return out
 
 
@@ -195,13 +215,16 @@ def load_quarantine(conn, qdf, batch_size):
     if qdf.empty:
         return 0
     q = qdf.drop_duplicates(["source_year", "row_hash"])
+    # fast=False: quarantine stores the 22 raw VARCHAR(MAX) source columns.
     return insert_batches(conn, _Q_SQL, _records(q, _Q_COLS, ["load_id", "source_year"]),
-                          batch_size)
+                          batch_size, fast=False)
 
 
 def load_fact(conn, fact, batch_size):
     """Idempotent fact load. Returns (inserted, skipped). Existing (row_hash,
     source_year) and within-batch duplicates are skipped and counted."""
+    if fact.empty:
+        return 0, 0
     year = int(fact["source_year"].iloc[0])
     cur = conn.cursor()
     cur.execute("SELECT row_hash FROM dw.fact_ems_run WHERE source_year = ?", year)

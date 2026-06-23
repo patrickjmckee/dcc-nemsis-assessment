@@ -4,6 +4,9 @@ db:
   server: localhost
   database: dcc_nemsis
   driver: "ODBC Driver 18 for SQL Server"
+  auth: trusted        # trusted (Windows/integrated) | sql
+  username: ""         # used only when auth = sql
+  password: ""         # used only when auth = sql
 
 paths:
   source_dir: ./_Claude/INPUTS
@@ -15,6 +18,7 @@ reference:
 
 etl:
   batch_size: 50000
+  read_chunk_size: 200000  # rows per CSV read chunk (caps peak memory)
   load_mode: full        # full | incremental
   load_window_years: []  # empty = all years; list years for incremental
 

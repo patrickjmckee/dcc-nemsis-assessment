@@ -25,4 +25,5 @@ def stage_dataframe(conn, df, load_id, batch_size):
     staged["load_id"] = load_id
     staged = staged.where(staged.notna(), None)
     rows = list(staged[_COLUMNS].itertuples(index=False, name=None))
-    return insert_batches(conn, _INSERT_SQL, rows, batch_size)
+    # fast=False: stg_ems_raw is all VARCHAR(MAX) columns.
+    return insert_batches(conn, _INSERT_SQL, rows, batch_size, fast=False)

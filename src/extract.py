@@ -1,5 +1,5 @@
-"""Extract: read one source-year CSV into a DataFrame, trimming header
-whitespace and enforcing the expected 22-column schema."""
+"""Extract: stream one source-year CSV in chunks, trimming header whitespace
+and enforcing the expected 22-column schema."""
 
 from pathlib import Path
 
@@ -8,25 +8,35 @@ import pandas as pd
 from utils import SOURCE_COLUMNS
 
 
-def read_year(source_dir, source_pattern, year):
-    """Read ems_runs_<year>.csv as all-string columns, '' coerced to NaN.
+def _validate_columns(columns, name):
+    """Trim header whitespace (dq-rules rule 7) and verify the source schema."""
+    trimmed = [c.strip() for c in columns]
+    missing = [c for c in SOURCE_COLUMNS if c not in trimmed]
+    if missing:
+        raise ValueError(f"{name}: missing expected columns {missing}")
+    return trimmed
 
-    Trims header whitespace (dq-rules rule 7) and validates the schema against
-    SOURCE_COLUMNS. Returns a DataFrame with the 22 source columns plus
-    source_year. Empty strings become NaN so null handling is uniform.
+
+def read_year_chunks(source_dir, source_pattern, year, chunk_size):
+    """Yield schema-validated chunks of ems_runs_<year>.csv.
+
+    Columns are read as strings; only '' is treated as null
+    (keep_default_na=False) so literal source tokens like 'None'/'NA'/'NULL'
+    survive verbatim instead of being coerced to NaN. Each chunk carries the 22
+    source columns plus source_year. Chunking caps peak memory for the large
+    (400MB+) files.
     """
     path = Path(source_dir) / source_pattern.format(year=year)
-    df = pd.read_csv(
+    reader = pd.read_csv(
         path,
         dtype=str,
-        keep_default_na=True,
+        keep_default_na=False,
         na_values=[""],
         skipinitialspace=True,
+        chunksize=chunk_size,
     )
-    df.columns = [c.strip() for c in df.columns]
-    missing = [c for c in SOURCE_COLUMNS if c not in df.columns]
-    if missing:
-        raise ValueError(f"{path.name}: missing expected columns {missing}")
-    df = df[SOURCE_COLUMNS].copy()
-    df["source_year"] = int(year)
-    return df
+    for chunk in reader:
+        chunk.columns = _validate_columns(chunk.columns, path.name)
+        chunk = chunk[SOURCE_COLUMNS].copy()
+        chunk["source_year"] = int(year)
+        yield chunk
