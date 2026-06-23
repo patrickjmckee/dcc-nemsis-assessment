@@ -1,8 +1,7 @@
 # Session 1.5 Complex DQ Checks
 
 Generated: 2026-06-22 19:24
-Source: `_Claude/INPUTS/ems_runs_*.csv` (13 files)
-
+Source: `/data/ems_runs_*.csv`
 
 ---
 
