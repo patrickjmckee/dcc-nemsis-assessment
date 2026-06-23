@@ -6,9 +6,12 @@ db:
   driver: "ODBC Driver 18 for SQL Server"
 
 paths:
-  source_dir: ./data/raw
+  source_dir: ./_Claude/INPUTS
   source_pattern: "ems_runs_{year}.csv"
   years: [2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025]
+
+reference:
+  counties_file: ./config/indiana_counties.txt
 
 etl:
   batch_size: 50000
