@@ -1,8 +1,5 @@
 # ./.gitignore
 
-# Claude working directories
-_Claude/
-.claude/
 
 # Environment
 .env
