@@ -17,8 +17,8 @@ from datetime import datetime
 
 import pandas as pd
 
-INPUTS_GLOB = "_Claude/INPUTS/ems_runs_*.csv"
-OUTPUT_MD = "_Claude/OUTPUTS/dq_complex_checks.md"
+INPUTS_GLOB = "/data/ems_runs_*.csv"
+OUTPUT_MD = "/data_quality/dq_complex_checks.md"
 DQ_APPEND = "data_quality/raw_ems_dq.md"
 CHUNK_SIZE = 200_000
 
@@ -251,7 +251,7 @@ def write_full_output(results, years):
     stub_by_year, ts_by_year, dur_by_year, provider_counter, county_year = results
     sections = [
         f"# Session 1.5 Complex DQ Checks\n\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-        f"Source: `_Claude/INPUTS/ems_runs_*.csv` (13 files)\n",
+        f"Source: `/data/ems_runs_*.csv` (13 files)\n",
         format_check1(stub_by_year),
         format_check2(ts_by_year),
         format_check3(dur_by_year),
@@ -294,7 +294,7 @@ def append_dq_summary(stub_by_year, ts_by_year, dur_by_year):
             if n_test > 0:
                 lines.append(f"- {year} / {field}: {n_miss:,} mismatches / {n_test:,} testable ({fmt_pct(n_miss, n_test)})")
 
-    lines.append("\nSee `_Claude/OUTPUTS/dq_complex_checks.md` for full results (Check 4 combos, Check 5 county-year matrix).")
+    lines.append("\nSee `/data_quality/dq_complex_checks.md` for full results (Check 4 combos, Check 5 county-year matrix).")
 
     with open(DQ_APPEND, "a") as f:
         f.write("\n".join(lines))
