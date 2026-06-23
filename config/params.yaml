@@ -1,0 +1,20 @@
+env: dev
+
+db:
+  server: localhost
+  database: dcc_nemsis
+  driver: "ODBC Driver 18 for SQL Server"
+
+paths:
+  source_dir: ./data/raw
+  source_pattern: "ems_runs_{year}.csv"
+  years: [2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025]
+
+etl:
+  batch_size: 50000
+  load_mode: full        # full | incremental
+  load_window_years: []  # empty = all years; list years for incremental
+
+logging:
+  log_dir: ./logs
+  log_level: INFO

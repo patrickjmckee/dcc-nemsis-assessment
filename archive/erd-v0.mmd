@@ -1,0 +1,94 @@
+erDiagram
+    dim_date ||--o{ fact_ems_run : "incident date"
+    dim_county ||--o{ fact_ems_run : "county"
+    dim_provider_type ||--o{ fact_ems_run : "provider type"
+    dim_destination_type ||--o{ fact_ems_run : "destination"
+    dim_disposition ||--o{ fact_ems_run : "disposition"
+    dim_complaint ||--o{ fact_ems_run : "complaint"
+    dim_run_flags ||--o{ fact_ems_run : "flags"
+
+    fact_ems_run {
+        bigint ems_run_key PK
+        int date_key FK
+        int county_key FK
+        int provider_type_key FK
+        int destination_key FK
+        int disposition_key FK
+        int impression_key FK
+        int complaint_key FK
+        int flags_key FK
+        datetime unit_notified_by_dispatch_dt
+        datetime unit_arrived_on_scene_dt
+        datetime unit_arrived_to_patient_dt
+        datetime unit_left_scene_dt
+        datetime patient_arrived_destination_dt
+        int provider_to_scene_mins
+        int provider_to_destination_mins
+        int run_count
+        smallint source_year
+        bigint load_id
+        binary row_hash
+    }
+
+    dim_date {
+        int date_key PK
+        date full_date
+        smallint year
+        tinyint month
+        tinyint day
+        tinyint quarter
+        tinyint day_of_week
+    }
+
+    dim_county {
+        int county_key PK
+        varchar county_name
+    }
+
+    dim_provider_type {
+        int provider_type_key PK
+        varchar provider_type_structure
+        varchar provider_type_service
+        varchar provider_type_service_level
+        binary row_hash
+        datetime valid_from
+        datetime valid_to
+        bit is_current
+    }
+
+    dim_destination_type {
+        int destination_key PK
+        varchar destination_type
+        binary row_hash
+        datetime valid_from
+        datetime valid_to
+        bit is_current
+    }
+
+    dim_disposition {
+        int disposition_key PK
+        varchar disposition_ed
+        varchar disposition_hospital
+        binary row_hash
+        datetime valid_from
+        datetime valid_to
+        bit is_current
+    }
+
+    dim_complaint {
+        int complaint_key PK
+        varchar chief_complaint_dispatch
+        varchar chief_complaint_anatomic_loc
+        varchar primary_symptom
+        binary row_hash
+        datetime valid_from
+        datetime valid_to
+        bit is_current
+    }
+
+    dim_run_flags {
+        int flags_key PK
+        varchar injury_flg
+        bit naloxone_given_flg
+        bit medication_given_other_flg
+    }
