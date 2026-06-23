@@ -1,7 +1,7 @@
 # EMS Runs Profiling Report (Indiana EMS, 2014-2025)
 
 Generated: 2026-06-22
-Source: `./_Claude/INPUTS/ems_runs_*.csv` (13 files, ~3.5 GB total)
+Source: `./data/ems_runs_*.csv`
 Method: chunked full-file scan (pandas, 200k-row chunks), all columns read as string.
 
 ---
