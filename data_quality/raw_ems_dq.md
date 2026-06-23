@@ -95,8 +95,6 @@
 - 2021 / PROVIDER_TO_SCENE_MINS: 524,509 mismatches / 1,189,364 testable (44.10%)
 - 2021 / PROVIDER_TO_DESTINATION_MINS: 879,588 mismatches / 884,936 testable (99.40%)
 
-See `_Claude/OUTPUTS/dq_complex_checks.md` for full results (Check 4 combos, Check 5 county-year matrix).
-
 ### Interpretation and rule changes
 
 - **Check 1 (Stubs):** 7 stubs across 10.5M rows (<0.01%). Not material. No quarantine rule change.
